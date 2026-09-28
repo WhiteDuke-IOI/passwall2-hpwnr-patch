@@ -22,12 +22,13 @@ SYSUPGRADE_MARKER="# passwall2-hpwnr-patch"
 
 # ── Цвета ────────────────────────────────────────────────────
 if [ -t 1 ]; then
-    GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-    RED='\033[0;31m'; CYAN='\033[0;36m'
-    BOLD='\033[1m'; NC='\033[0m'
+    GREEN=$(printf '\033[0;32m'); YELLOW=$(printf '\033[1;33m')
+    RED=$(printf '\033[0;31m');   CYAN=$(printf '\033[0;36m')
+    BOLD=$(printf '\033[1m');     NC=$(printf '\033[0m')
 else
     GREEN=''; YELLOW=''; RED=''; CYAN=''; BOLD=''; NC=''
 fi
+
 
 info()    { printf "${GREEN}[+]${NC} %s\n" "$*"; }
 warn()    { printf "${YELLOW}[!]${NC} %s\n" "$*"; }
