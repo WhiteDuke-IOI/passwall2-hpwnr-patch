@@ -226,5 +226,5 @@ passwall2-hpwnr-patch/
 
 ## Благодарности
 
-- [hpwnr](https://github.com/Omegaplexx/hpwnr) — slavrom21 & Omegaplex
+- [hpwnr](https://github.com/Omegaplexx/hpwnr)
 - [PassWall2](https://github.com/Openwrt-Passwall/openwrt-passwall2)
