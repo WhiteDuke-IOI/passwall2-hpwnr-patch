@@ -1,0 +1,163 @@
+#!/bin/sh
+# /usr/bin/passwall2-hpwnr-patch
+# Applies (or removes) hpwnr patch to PassWall2 subscribe.lua
+# Usage:
+#   passwall2-hpwnr-patch            — apply patch
+#   passwall2-hpwnr-patch unapply   — restore original subscribe.lua
+
+SUBSCRIBE="/usr/share/passwall2/subscribe.lua"
+BACKUP="${SUBSCRIBE}.pre-hpwnr.bak"
+MARKER="HPWNR_PATCHED"
+
+# ── Режим снятия патча ───────────────────────────────────────
+if [ "$1" = "unapply" ]; then
+    echo "[hpwnr-patch] Unapplying patch..."
+
+    if [ ! -f "$SUBSCRIBE" ]; then
+        echo "[hpwnr-patch] $SUBSCRIBE not found, nothing to restore."
+        exit 0
+    fi
+
+    if ! grep -q "$MARKER" "$SUBSCRIBE" 2>/dev/null; then
+        echo "[hpwnr-patch] Patch marker not found — already clean."
+        exit 0
+    fi
+
+    if [ -f "$BACKUP" ]; then
+        cp "$BACKUP" "$SUBSCRIBE"
+        rm -f "$BACKUP"
+        echo "[hpwnr-patch] Restored from backup: $BACKUP"
+    else
+        echo "[hpwnr-patch] Backup not found, reinstalling passwall2..."
+        if command -v apk >/dev/null 2>&1; then
+            apk fix luci-app-passwall2 >/dev/null 2>&1 || \
+            apk add --force-overwrite luci-app-passwall2 >/dev/null 2>&1
+        elif command -v opkg >/dev/null 2>&1; then
+            opkg install --force-reinstall luci-app-passwall2 >/dev/null 2>&1
+        else
+            echo "[hpwnr-patch] ERROR: cannot restore — no backup and no package manager found."
+            exit 1
+        fi
+        echo "[hpwnr-patch] passwall2 reinstalled."
+    fi
+
+    # Проверяем что маркер ушёл
+    if grep -q "$MARKER" "$SUBSCRIBE" 2>/dev/null; then
+        echo "[hpwnr-patch] ERROR: marker still present after restore!"
+        exit 1
+    fi
+
+    echo "[hpwnr-patch] Patch removed successfully."
+    exit 0
+fi
+
+# ── Режим применения патча ───────────────────────────────────
+
+# 1. Файл subscribe.lua существует?
+if [ ! -f "$SUBSCRIBE" ]; then
+    echo "[hpwnr-patch] $SUBSCRIBE not found. PassWall2 not installed?"
+    echo "[hpwnr-patch] Patch will be applied automatically after PassWall2 is installed."
+    exit 0
+fi
+
+# 2. Уже пропатчено?
+if grep -q "$MARKER" "$SUBSCRIBE" 2>/dev/null; then
+    echo "[hpwnr-patch] Already patched, nothing to do."
+    exit 0
+fi
+
+# 3. Модуль hpwnr.lua на месте?
+if [ ! -f "/usr/share/passwall2/hpwnr.lua" ]; then
+    echo "[hpwnr-patch] ERROR: /usr/share/passwall2/hpwnr.lua not found!"
+    echo "[hpwnr-patch] Run install.sh first."
+    exit 1
+fi
+
+# 4. Ищем точки вставки
+LINE1=$(grep -n "^local execute = function" "$SUBSCRIBE" | head -1 | cut -d: -f1)
+
+LINE2=$(awk '
+    /^[[:space:]]*else[[:space:]]*$/ { else_nr = NR }
+    /local ua = value\.user_agent/ {
+        if (else_nr && NR == else_nr + 1) { print else_nr; exit }
+    }
+' "$SUBSCRIBE")
+
+if [ -z "$LINE1" ]; then
+    echo "[hpwnr-patch] ERROR: cannot find 'local execute = function'."
+    echo "[hpwnr-patch] PassWall2 version may be incompatible."
+    exit 1
+fi
+
+if [ -z "$LINE2" ]; then
+    echo "[hpwnr-patch] ERROR: cannot find elseif insertion point."
+    echo "[hpwnr-patch] PassWall2 version may be incompatible."
+    exit 1
+fi
+
+echo "[hpwnr-patch] Insertion points: line $LINE1 (dofile), line $LINE2 (elseif)"
+
+# 5. Бэкап (только если его ещё нет)
+if [ ! -f "$BACKUP" ]; then
+    cp "$SUBSCRIBE" "$BACKUP"
+    echo "[hpwnr-patch] Backup saved: $BACKUP"
+fi
+
+# 6. Создаём блоки для вставки
+TMPB1=$(mktemp)
+TMPB2=$(mktemp)
+TMPOUT=$(mktemp)
+
+cat > "$TMPB1" << 'DOFILE_END'
+local hpwnr = dofile("/usr/share/passwall2/hpwnr.lua") -- HPWNR_PATCHED
+DOFILE_END
+
+cat > "$TMPB2" << 'ELSEIF_END'
+			elseif hpwnr.is_hpwnr_url(url) then
+				log(1, i18n.translatef("Start subscribing: %s", '【' .. remark .. '】' .. url .. ' [hpwnr]'))
+				tmp_file = "/tmp/" .. cfgid
+				local hpwnr_ok, hpwnr_code, hpwnr_userinfo, hpwnr_logs = hpwnr.process(url, value.user_agent, value.hwid, tmp_file)
+				for _, msg in ipairs(hpwnr_logs) do log(1, msg) end
+				value.http_code = hpwnr_code or 0
+				if hpwnr_userinfo then uci_set(cfgid, "userinfo", hpwnr_userinfo) end
+				if not hpwnr_ok then
+					fail_list[#fail_list + 1] = value
+					luci.sys.call("rm -f " .. tmp_file)
+				end
+ELSEIF_END
+
+# 7. Применяем через awk
+awk -v line1="$LINE1" -v line2="$LINE2" \
+    -v b1="$TMPB1" -v b2="$TMPB2" '
+NR == line1 {
+    while ((getline ins < b1) > 0) print ins
+    close(b1)
+}
+NR == line2 {
+    while ((getline ins < b2) > 0) print ins
+    close(b2)
+}
+{ print }
+' "$SUBSCRIBE" > "$TMPOUT"
+
+# 8. Проверка результата
+FAILED=0
+if [ ! -s "$TMPOUT" ]; then
+    echo "[hpwnr-patch] ERROR: patched file is empty!"
+    FAILED=1
+fi
+if ! grep -q "$MARKER" "$TMPOUT" 2>/dev/null; then
+    echo "[hpwnr-patch] ERROR: marker not found in patched file!"
+    FAILED=1
+fi
+
+if [ "$FAILED" = "1" ]; then
+    echo "[hpwnr-patch] Restoring backup..."
+    cp "$BACKUP" "$SUBSCRIBE"
+    rm -f "$TMPB1" "$TMPB2" "$TMPOUT"
+    exit 1
+fi
+
+mv "$TMPOUT" "$SUBSCRIBE"
+rm -f "$TMPB1" "$TMPB2"
+echo "[hpwnr-patch] SUCCESS! Patch applied."
