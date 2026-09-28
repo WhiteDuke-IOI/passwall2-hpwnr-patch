@@ -131,7 +131,10 @@ wget -qO- https://raw.githubusercontent.com/WhiteDuke-IOI/passwall2-hpwnr-patch/
 
 ---
 
-## bинарник hpwnr: поддерживаемые архитектуры
+## bинарник hpwnr
+
+> ЭТО ВСЁ ВРЕМЕННО!!! 
+> После обновления в [hpwnr](https://github.com/Omegaplexx/hpwnr) здесь они будут удалены!
 
 В этом репозитории (`files/hpwnr/`) находятся бинарники для:
 
@@ -143,7 +146,7 @@ wget -qO- https://raw.githubusercontent.com/WhiteDuke-IOI/passwall2-hpwnr-patch/
 ```bash
 uname -m
 ```
-Если нужной архитектуры нет — соберите из исходников [hpwnr](https://github.com/Omegaplexx/hpwnr)
+Если нужной архитектуры нет — посмотрите в оригинале [hpwnr](https://github.com/Omegaplexx/hpwnr)
 
 ---
 
@@ -210,18 +213,14 @@ passwall2-hpwnr-patch/
     ├── hpwnr.lua                  ← Lua-модуль (архитектуронезависимый)
     ├── passwall2-hpwnr-patch      ← скрипт патча/снятия патча
     └── hpwnr/
-        ├── aarch64
-        ├── x86_64
-        ├── mipsel
-        ├── mips
-        └── arm
+        └── x86_64
 ```
 
 ---
 
 ## Лицензия
 
-MIT
+Предоставляется как есть, без гарантий. Используйте только для легального анализа, обеспечения совместимости, исследований и обучения, и только с данными, к которым у вас есть право доступа. Названия Happ, V2RayTun и связанные с ними могут быть защищены правами третьих лиц; данный проект не связан с их владельцами.
 
 ---
 

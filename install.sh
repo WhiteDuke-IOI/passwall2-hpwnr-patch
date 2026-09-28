@@ -57,13 +57,21 @@ done
 
 # ── Утилиты ──────────────────────────────────────────────────
 ask() {
-    # ask "Question" → возвращает 0 (yes) или 1 (no)
-    # В режиме --yes всегда возвращает 0
     local prompt="$1"
-    local default="${2:-y}"  # y или n
+    local default="${2:-y}"
 
     if [ "$OPT_YES" = "1" ]; then
         return 0
+    fi
+
+    # Проверяем что /dev/tty доступен (терминал есть)
+    if [ ! -c /dev/tty ]; then
+        # Нет терминала — используем default
+        warn "No TTY available, using default answer for: $prompt"
+        case "$default" in
+            y) return 0 ;;
+            *) return 1 ;;
+        esac
     fi
 
     local hint
@@ -73,7 +81,7 @@ ask() {
     esac
 
     printf "${YELLOW}?${NC} %s %s " "$prompt" "$hint"
-    read -r ans
+    read -r ans </dev/tty   # ← читает с терминала напрямую, минуя pipe
 
     if [ -z "$ans" ]; then
         ans="$default"
