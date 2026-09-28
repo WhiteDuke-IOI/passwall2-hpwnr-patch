@@ -7,8 +7,8 @@
 # All at once:          sh install.sh --with-hpwnr --yes
 # Uninstall:            sh install.sh uninstall
 
-REPO="https://github.com/USER/passwall2-hpwnr-patch"
-REPO_RAW="https://raw.githubusercontent.com/USER/passwall2-hpwnr-patch/main"
+REPO="https://github.com/WhiteDuke-IOI/passwall2-hpwnr-patch"
+REPO_RAW="https://raw.githubusercontent.com/WhiteDuke-IOI/passwall2-hpwnr-patch/main"
 
 # ── Пути ─────────────────────────────────────────────────────
 HPWNR_LUA="/usr/share/passwall2/hpwnr.lua"
