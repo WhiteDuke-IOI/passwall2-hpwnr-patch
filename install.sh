@@ -113,27 +113,74 @@ detect_pkg_manager() {
     fi
 }
 
+# ── Получение download URL через GitHub API ───────────────────
+get_hpwnr_download_url() {
+    local binary="$1"
+    local api_url="https://api.github.com/repos/Omegaplexx/hpwnr/releases/latest"
+
+    info "Fetching latest release info from GitHub API..."
+
+    local api_response
+    if command -v curl >/dev/null 2>&1; then
+        api_response=$(curl -sSL \
+            -H "Accept: application/vnd.github.v3+json" \
+            "$api_url" 2>/dev/null)
+    else
+        api_response=$(wget -qO- "$api_url" 2>/dev/null)
+    fi
+
+    if [ -z "$api_response" ]; then
+        warn "GitHub API unreachable, falling back to direct URL..."
+        echo "https://github.com/Omegaplexx/hpwnr/releases/latest/download/${binary}"
+        return 0
+    fi
+
+    # Проверяем rate limit (API без токена: 60 req/hour)
+    if echo "$api_response" | grep -q '"message".*"API rate limit exceeded"'; then
+        warn "GitHub API rate limit exceeded, falling back to direct URL..."
+        echo "https://github.com/Omegaplexx/hpwnr/releases/latest/download/${binary}"
+        return 0
+    fi
+
+    # Извлекаем тег версии для информации
+    local tag
+    tag=$(echo "$api_response" \
+        | grep -o '"tag_name":"[^"]*"' \
+        | grep -o '"[^"]*"$' \
+        | tr -d '"')
+    [ -n "$tag" ] && info "Latest release: ${BOLD}${tag}${NC}"
+
+    # Извлекаем browser_download_url для нужного бинарника
+    # Формат JSON: "browser_download_url":"https://github.com/.../hpwnr-linux-arm64"
+    local dl_url
+    dl_url=$(echo "$api_response" \
+        | grep -o '"browser_download_url":"[^"]*'"${binary}"'"' \
+        | grep -o 'https://[^"]*')
+
+    if [ -z "$dl_url" ]; then
+        warn "Binary '${binary}' not found in latest release assets."
+        warn "Falling back to direct URL..."
+        echo "https://github.com/Omegaplexx/hpwnr/releases/latest/download/${binary}"
+        return 0
+    fi
+
+    echo "$dl_url"
+}
+
 # ── Определение архитектуры роутера ──────────────────────────
 detect_arch() {
     local machine
     machine=$(uname -m 2>/dev/null || echo "unknown")
 
     case "$machine" in
-        aarch64)          echo "aarch64" ;;
-        x86_64)           echo "x86_64" ;;
-        mips)
-            # Определяем endianness
-            if grep -q "mipsel" /proc/cpuinfo 2>/dev/null \
-            || echo "$machine" | grep -q "el"; then
-                echo "mipsel"
-            else
-                echo "mips"
-            fi
-            ;;
-        mipsel)           echo "mipsel" ;;
-        armv7*|armv6*)    echo "arm" ;;
-        arm*)             echo "arm" ;;
-        *)                echo "unknown" ;;
+        aarch64)             echo "hpwnr-linux-arm64" ;;
+        x86_64)              echo "hpwnr-linux-x86_64" ;;
+        armv7*|armv6*)       echo "hpwnr-linux-armv7" ;;
+        arm*)                echo "hpwnr-linux-armv7" ;;
+        i386|i486|i586|i686) echo "hpwnr-linux-x86" ;;
+        riscv64)             echo "hpwnr-linux-riscv64" ;;
+        mips|mipsel|mips64)  echo "" ;;
+        *)                   echo "" ;;
     esac
 }
 
@@ -141,58 +188,72 @@ detect_arch() {
 # INSTALL HPWNR BINARY
 # ════════════════════════════════════════════════════════════
 install_hpwnr_binary() {
-    local arch
-    arch=$(detect_arch)
+    local machine
+    machine=$(uname -m 2>/dev/null || echo "unknown")
+    local binary
+    binary=$(detect_arch)
 
-    info "Detected architecture: ${BOLD}${arch}${NC}"
+    info "Detected CPU: ${BOLD}${machine}${NC}"
 
-    if [ "$arch" = "unknown" ]; then
-        warn "Cannot detect architecture automatically."
-        warn "Available: aarch64, x86_64, mipsel, mips, arm"
-        printf "${YELLOW}?${NC} Enter your architecture: "
-        read -r arch
-        if [ -z "$arch" ]; then
-            warn "Skipping hpwnr binary installation."
-            return 1
-        fi
+    if [ -z "$binary" ]; then
+        warn "Architecture '${machine}' is not supported by hpwnr upstream."
+        warn "Supported architectures:"
+        warn "  aarch64 / arm64  →  hpwnr-linux-arm64"
+        warn "  x86_64           →  hpwnr-linux-x86_64"
+        warn "  armv6 / armv7    →  hpwnr-linux-armv7"
+        warn "  x86 (i386-i686)  →  hpwnr-linux-x86"
+        warn "  riscv64          →  hpwnr-linux-riscv64"
+        warn ""
+        warn "Manual download: https://github.com/Omegaplexx/hpwnr/releases/latest"
+        return 1
     fi
 
-    local url="${REPO_RAW}/files/hpwnr/${arch}"
-    info "Downloading hpwnr for ${arch}..."
-    info "  URL: ${url}"
+    info "Matched binary: ${BOLD}${binary}${NC}"
+
+    # Получаем точный URL через API
+    local dl_url
+    dl_url=$(get_hpwnr_download_url "$binary")
+
+    info "URL: ${CYAN}${dl_url}${NC}"
 
     local tmp_bin
     tmp_bin=$(mktemp)
 
-    if ! download "$url" "$tmp_bin"; then
-        error "Download failed! Binary for '${arch}' may not be in the repository yet."
-        warn "Available binaries: ${REPO}/tree/main/files/hpwnr"
-        warn "Or build from source: https://github.com/Omegaplexx/hpwnr"
+    info "Downloading..."
+    if ! download "$dl_url" "$tmp_bin"; then
+        error "Download failed!"
         rm -f "$tmp_bin"
         return 1
     fi
 
-    # Проверяем что это не HTML страница 404
-    local first_bytes
-    first_bytes=$(head -c 4 "$tmp_bin" 2>/dev/null | cat -v)
-    if echo "$first_bytes" | grep -q "404\|<htm\|Not F"; then
-        error "Downloaded file looks like an error page, not a binary."
-        rm -f "$tmp_bin"
-        return 1
-    fi
+    # Проверяем что это не HTML-страница с ошибкой
+    local mime
+    mime=$(head -c 5 "$tmp_bin" 2>/dev/null)
+    case "$mime" in
+        \<\!DOC|\<html)
+            error "Got an HTML page instead of a binary — URL may be wrong."
+            rm -f "$tmp_bin"
+            return 1
+            ;;
+    esac
 
     chmod +x "$tmp_bin"
 
-    # Проверяем что бинарник запускается (базовая проверка)
+    # Проверяем что бинарник запускается
     if ! "$tmp_bin" help >/dev/null 2>&1; then
         warn "Binary downloaded but failed to execute — may be wrong architecture."
-        warn "Binary saved to $HPWNR_BIN anyway, check manually."
+        warn "Saved to $HPWNR_BIN anyway, verify manually."
+    else
+        local ver
+        ver=$("$tmp_bin" help 2>/dev/null | head -1)
+        ok "Binary check: ${ver}"
     fi
 
     mv "$tmp_bin" "$HPWNR_BIN"
-    ok "hpwnr installed: $HPWNR_BIN (arch: ${arch})"
+    ok "Installed: $HPWNR_BIN"
     return 0
 }
+
 
 # ════════════════════════════════════════════════════════════
 # UNINSTALL

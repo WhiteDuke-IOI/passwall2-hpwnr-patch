@@ -131,25 +131,6 @@ wget -qO- https://raw.githubusercontent.com/WhiteDuke-IOI/passwall2-hpwnr-patch/
 
 ---
 
-## bинарник hpwnr
-
-> ЭТО ВСЁ ВРЕМЕННО!!! 
-> После обновления в [hpwnr](https://github.com/Omegaplexx/hpwnr) здесь они будут удалены!
-
-В этом репозитории (`files/hpwnr/`) находятся бинарники для:
-
-| Архитектура | Устройства |
-|-------------|------------|
-| `x86_64` | x86 роутеры/VM |
-
-Определить архитектуру своего роутера:
-```bash
-uname -m
-```
-Если нужной архитектуры нет — посмотрите в оригинале [hpwnr](https://github.com/Omegaplexx/hpwnr)
-
----
-
 ## Ручное управление патчем
 
 ```bash
@@ -211,9 +192,7 @@ passwall2-hpwnr-patch/
 ├── install.sh                     ← единственный скрипт для установки и удаления
 └── files/
     ├── hpwnr.lua                  ← Lua-модуль (архитектуронезависимый)
-    ├── passwall2-hpwnr-patch      ← скрипт патча/снятия патча
-    └── hpwnr/
-        └── x86_64
+    └── passwall2-hpwnr-patch      ← скрипт патча/снятия патча
 ```
 
 ---
