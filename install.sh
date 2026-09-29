@@ -118,7 +118,8 @@ get_hpwnr_download_url() {
     local binary="$1"
     local api_url="https://api.github.com/repos/Omegaplexx/hpwnr/releases/latest"
 
-    info "Fetching latest release info from GitHub API..."
+    # ↓ все info/warn идут в stderr (&2), чтобы не попасть в $()
+    info "Fetching latest release info from GitHub API..." >&2
 
     local api_response
     if command -v curl >/dev/null 2>&1; then
@@ -126,46 +127,50 @@ get_hpwnr_download_url() {
             -H "Accept: application/vnd.github.v3+json" \
             "$api_url" 2>/dev/null)
     else
-        api_response=$(wget -qO- "$api_url" 2>/dev/null)
+        api_response=$(wget -qO- \
+            --header="Accept: application/vnd.github.v3+json" \
+            "$api_url" 2>/dev/null)
     fi
+
+    # Fallback-URL (используется при любой ошибке)
+    local fallback="https://github.com/Omegaplexx/hpwnr/releases/latest/download/${binary}"
 
     if [ -z "$api_response" ]; then
-        warn "GitHub API unreachable, falling back to direct URL..."
-        echo "https://github.com/Omegaplexx/hpwnr/releases/latest/download/${binary}"
+        warn "GitHub API unreachable, falling back to direct URL..." >&2
+        echo "$fallback"   # ← единственное что идёт в stdout = в $()
         return 0
     fi
 
-    # Проверяем rate limit (API без токена: 60 req/hour)
     if echo "$api_response" | grep -q '"message".*"API rate limit exceeded"'; then
-        warn "GitHub API rate limit exceeded, falling back to direct URL..."
-        echo "https://github.com/Omegaplexx/hpwnr/releases/latest/download/${binary}"
+        warn "GitHub API rate limit exceeded, falling back to direct URL..." >&2
+        echo "$fallback"
         return 0
     fi
 
-    # Извлекаем тег версии для информации
+    # Версия — в stderr
     local tag
     tag=$(echo "$api_response" \
-        | grep -o '"tag_name":"[^"]*"' \
+        | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' \
         | grep -o '"[^"]*"$' \
         | tr -d '"')
-    [ -n "$tag" ] && info "Latest release: ${BOLD}${tag}${NC}"
+    [ -n "$tag" ] && info "Latest release: ${BOLD}${tag}${NC}" >&2
 
-    # Извлекаем browser_download_url для нужного бинарника
-    # Формат JSON: "browser_download_url":"https://github.com/.../hpwnr-linux-arm64"
+    # Ищем browser_download_url с учётом пробелов вокруг ":"
+    # JSON может быть как "key":"val" так и "key": "val"
     local dl_url
     dl_url=$(echo "$api_response" \
-        | grep -o '"browser_download_url":"[^"]*'"${binary}"'"' \
+        | grep -o '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]*'"${binary}"'"' \
         | grep -o 'https://[^"]*')
 
     if [ -z "$dl_url" ]; then
-        warn "Binary '${binary}' not found in latest release assets."
-        warn "Falling back to direct URL..."
-        echo "https://github.com/Omegaplexx/hpwnr/releases/latest/download/${binary}"
+        warn "Binary '${binary}' not found in release assets, falling back..." >&2
+        echo "$fallback"
         return 0
     fi
 
-    echo "$dl_url"
+    echo "$dl_url"   # ← только URL в stdout
 }
+
 
 # ── Определение архитектуры роутера ──────────────────────────
 detect_arch() {
